@@ -14,32 +14,23 @@ import ServiceManagement
 import AVFoundation
 
 public struct LaunchAtLogin {
-    private static let id = "\(Bundle.main.bundleIdentifier!).LaunchAtLogin"
-    
+    private static let service = SMAppService.mainApp
+
     public static var isEnabled: Bool {
         get {
-            guard let jobs = (LaunchAtLogin.self as DeprecationWarningWorkaround.Type).jobsDict else {
-                return false
-            }
-            
-            let job = jobs.first { $0["Label"] as! String == id }
-            return job?["OnDemand"] as? Bool ?? false
+            service.status == .enabled
         }
         set {
-            SMLoginItemSetEnabled(id as CFString, newValue)
+            do {
+                if newValue {
+                    try service.register()
+                } else {
+                    try service.unregister()
+                }
+            } catch {
+                print("LaunchAtLogin: failed to \(newValue ? "register" : "unregister"): \(error)")
+            }
         }
-    }
-}
-
-private protocol DeprecationWarningWorkaround {
-    static var jobsDict: [[String: AnyObject]]? { get }
-}
-
-extension LaunchAtLogin: DeprecationWarningWorkaround {
-    @available(*, deprecated)
-    static var jobsDict: [[String: AnyObject]]? {
-        SMCopyAllJobDictionaries(kSMDomainUserLaunchd)?.takeRetainedValue() as? [[String: AnyObject]]
-        
     }
 }
 
@@ -91,7 +82,7 @@ public extension AVPlayerItem {
         return self.loadedTimeRanges
             .map({ $0.timeRangeValue })
             .reduce(0, { acc, cur in
-                return acc + CMTimeGetSeconds(cur.start) + CMTimeGetSeconds(cur.duration)
+                return acc + CMTimeGetSeconds(cur.duration)
             })
     }
     
@@ -99,7 +90,8 @@ public extension AVPlayerItem {
         let currentTime = self.currentTime()
         guard let timeRange = self.loadedTimeRanges.map({ $0.timeRangeValue }).first(where: { $0.containsTime(currentTime) }) else { return -1 }
         
-        return CMTimeGetSeconds(timeRange.end) - currentTime.seconds
+        let behindBuffer = currentTime.seconds - CMTimeGetSeconds(timeRange.start)
+        return max(behindBuffer, 0)
     }
 }
 

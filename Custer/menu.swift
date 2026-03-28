@@ -68,8 +68,10 @@ class Menu: NSMenu {
         
         let volumeSlider = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         let volumeView: NSView = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 30))
-        
+        volumeView.autoresizingMask = .width
+
         let slider: NSSlider = NSSlider(frame: NSRect(x: 20, y: 6, width: volumeView.frame.width - 40, height: 16))
+        slider.autoresizingMask = .width
         slider.minValue = 0
         slider.maxValue = 1
         slider.doubleValue = Double(Player.shared.volume)
@@ -123,7 +125,7 @@ class Menu: NSMenu {
     }
     
     @objc public func showAddressView() {
-        NSApplication.shared.activate(ignoringOtherApps: true)
+        NSApplication.shared.activate()
         let alert: NSAlert = NSAlert()
         
         alert.addButton(withTitle: "OK")
@@ -141,7 +143,7 @@ class Menu: NSMenu {
         switch alert.runModal() {
         case .OK, .alertFirstButtonReturn:
             uri = input.stringValue
-        case .cancel, .alertThirdButtonReturn: break
+        case .cancel, .alertSecondButtonReturn: break
         default: break
         }
     }
@@ -170,7 +172,7 @@ class Menu: NSMenu {
         let dockIconStatus = state ? NSApplication.ActivationPolicy.regular : NSApplication.ActivationPolicy.accessory
         NSApp.setActivationPolicy(dockIconStatus)
         if state {
-            NSApplication.shared.activate(ignoringOtherApps: true)
+            NSApplication.shared.activate()
         }
     }
     

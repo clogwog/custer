@@ -65,6 +65,7 @@ internal class Player: NSObject {
     private var player = AVPlayer()
     private var observer: NSObjectProtocol?
     private var bufferObserver: Any!
+    private var metadataOutput: AVPlayerItemMetadataOutput?
     
     private var uri: String? = nil
     private var pauseTimestamp: Date? = nil
@@ -113,15 +114,27 @@ internal class Player: NSObject {
     }
     
     deinit {
-        self.player.currentItem?.removeObserver(self, forKeyPath: "timedMetadata")
-
-        if self.bufferObserver != nil {
-            self.player.removeTimeObserver(self.bufferObserver!)
-            self.bufferObserver = nil
-        }
+        self.removeObservers()
+        
+        self.remoteCommandCenter.playCommand.removeTarget(self)
+        self.remoteCommandCenter.pauseCommand.removeTarget(self)
+        self.remoteCommandCenter.stopCommand.removeTarget(self)
+        self.remoteCommandCenter.togglePlayPauseCommand.removeTarget(self)
 
         if self.observer != nil {
             NotificationCenter.default.removeObserver(self.observer!)
+        }
+    }
+    
+    private func removeObservers() {
+        if let output = self.metadataOutput {
+            self.player.currentItem?.remove(output)
+            self.metadataOutput = nil
+        }
+        
+        if self.bufferObserver != nil {
+            self.player.removeTimeObserver(self.bufferObserver!)
+            self.bufferObserver = nil
         }
     }
     
@@ -146,42 +159,42 @@ internal class Player: NSObject {
             return
         }
         
-        let statusKey = "tracks"
-        let asset: AVURLAsset = AVURLAsset(url: url, options: nil)
-        asset.loadValuesAsynchronously(forKeys: [statusKey], completionHandler: {
-            var error: NSError? = nil
-            
-            DispatchQueue.main.async {
-                if asset.statusOfValue(forKey: statusKey, error: &error) != .loaded {
-                    self.error = error!.localizedDescription
-                    self.state = .error
-                    os_log(.error, log: log, "load asset: %s", error!.localizedDescription)
-                    return
-                }
-                
-                let playerItem = AVPlayerItem(asset: asset)
-                playerItem.addObserver(self, forKeyPath: "timedMetadata", options: .new, context: nil)
-                
-                self.player = AVPlayer(playerItem: playerItem)
-                self.state = .ready
-                self.player.volume = self.volume
-                
-                if play {
-                    self.play()
-                }
-            }
-        })
-    }
-    
-    // timedMetadata change handler, will update the stream metadata
-    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
-        guard keyPath == "timedMetadata" else { return }
-        guard let meta = self.player.currentItem?.timedMetadata else { return }
-        for metadata in meta {
-            if let title = metadata.value(forKey: "value") as? String {
-                setMetadata(title: title)
+        self.removeObservers()
+        
+        let asset = AVURLAsset(url: url)
+        Task { [weak self, play] in
+            do {
+                let _ = try await asset.load(.tracks)
+                await self?.setupPlayer(asset: asset, play: play)
+            } catch {
+                await self?.handleLoadError(error)
             }
         }
+    }
+    
+    @MainActor
+    private func setupPlayer(asset: AVURLAsset, play: Bool) {
+        let playerItem = AVPlayerItem(asset: asset)
+
+        let output = AVPlayerItemMetadataOutput()
+        output.setDelegate(self, queue: .main)
+        playerItem.add(output)
+        self.metadataOutput = output
+
+        self.player = AVPlayer(playerItem: playerItem)
+        self.state = .ready
+        self.player.volume = self.volume
+
+        if play {
+            self.play()
+        }
+    }
+    
+    @MainActor
+    private func handleLoadError(_ error: Error) {
+        self.error = error.localizedDescription
+        self.state = .error
+        os_log(.error, log: log, "load asset: %s", error.localizedDescription)
     }
     
     public func play() {
@@ -192,14 +205,19 @@ internal class Player: NSObject {
         if self.pauseTimestamp != nil && abs(self.pauseTimestamp!.timeIntervalSinceNow) > 60*3 {
             self.pauseTimestamp = nil
             self.reset(play: true)
-        } else {
-            self.player.play()
+            return
         }
+        
+        self.player.play()
         self.player.volume = self.volume
         
         self.state = .playing
         os_log(.debug, log: log, "player is playing")
         
+        if self.bufferObserver != nil {
+            self.player.removeTimeObserver(self.bufferObserver!)
+            self.bufferObserver = nil
+        }
         self.bufferObserver = self.player.addPeriodicTimeObserver(forInterval: CMTimeMake(value: 1, timescale: 10), queue: DispatchQueue.main) { [weak self] time in
             self?.buffer(self?.player.currentItem?.totalBuffer() ?? -1, self?.player.currentItem?.currentBuffer() ?? -1)
         }
@@ -265,12 +283,10 @@ internal class Player: NSObject {
         
         info[MPNowPlayingInfoPropertyIsLiveStream] = 1.0
         
-        DispatchQueue.main.async { [unowned self] in
-          self.nowPlayingInfoCenter.nowPlayingInfo = info
+        DispatchQueue.main.async { [weak self] in
+            self?.nowPlayingInfoCenter.nowPlayingInfo = info
+            self?.nowPlayingInfoCenter.playbackState = .playing
         }
-        
-        self.nowPlayingInfoCenter.nowPlayingInfo = info
-        self.nowPlayingInfoCenter.playbackState = .playing
     }
     
     // MARK:- command handlers
@@ -297,5 +313,20 @@ internal class Player: NSObject {
             self.play()
         }
         return .success
+    }
+}
+
+// MARK: - AVPlayerItemMetadataOutputPushDelegate
+
+extension Player: AVPlayerItemMetadataOutputPushDelegate {
+    func metadataOutput(_ output: AVPlayerItemMetadataOutput, didOutputTimedMetadataGroups groups: [AVTimedMetadataGroup], from track: AVPlayerItemTrack?) {
+        for group in groups {
+            for item in group.items {
+                Task { [weak self] in
+                    guard let title = try? await item.load(.stringValue) else { return }
+                    self?.setMetadata(title: title)
+                }
+            }
+        }
     }
 }

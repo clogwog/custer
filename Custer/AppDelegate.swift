@@ -24,11 +24,11 @@ var uri: String {
     }
 }
 
-@NSApplicationMain
+@main
 class AppDelegate: NSObject, NSApplicationDelegate {
     private let menuBar: MenuBar = MenuBar()
     private let updater = Updater(name: "Custer", providers: [Updater.Github(user: "exelban", repo: "custer", asset: "Custer.dmg")])
-    private let reachability: Reachability = try! Reachability()
+    private let reachability = Reachability()
     
     private let autostart: Bool = Store.shared.bool(key: "autoplay", defaultValue: false)
     private var lastState: Bool = false
@@ -53,7 +53,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         nc.addObserver(self, selector: #selector(AppDelegate.onDidWake),
                        name: NSWorkspace.didWakeNotification, object: nil)
-
+        
         nc.addObserver(self, selector: #selector(AppDelegate.onWillSleep),
                        name: NSWorkspace.willSleepNotification, object: nil)
     }
@@ -73,7 +73,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func onDidWake() {
         os_log(.debug, log: log, "Resumed from sleep, recall the last state")
         if self.lastState {
-            Player.shared.play()
+            if reachability.isConnected {
+                Player.shared.clearBuffer()
+            }
         }
     }
 }
@@ -82,7 +84,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension AppDelegate: playerDelegate {
     func onError(error: String) {
-        if reachability.connection == .unavailable {
+        if !reachability.isConnected {
             return
         }
         
@@ -157,7 +159,7 @@ extension AppDelegate {
                 let alert = NSAlert()
                 alert.messageText = "New version available"
                 alert.informativeText = "Current version:   \(local.raw)\nLatest version:     \(external.tag.raw)"
-                alert.alertStyle = .warning
+                alert.alertStyle = .informational
                 alert.addButton(withTitle: "Install")
                 alert.addButton(withTitle: "Cancel")
                 
@@ -173,22 +175,18 @@ extension AppDelegate {
     }
     
     private func networkReachability() {
-        self.reachability.whenReachable = { reachability in
+        self.reachability.whenReachable = {
             if self.lastState {
                 Player.shared.clearBuffer()
             } else {
                 Player.shared.reset(play: false)
             }
         }
-        self.reachability.whenUnreachable = { _ in
+        self.reachability.whenUnreachable = {
             self.lastState = Player.shared.isPlaying()
             Player.shared.pause()
         }
         
-        do {
-            try self.reachability.startNotifier()
-        } catch {
-            print("Unable to start notifier")
-        }
+        self.reachability.start()
     }
 }
