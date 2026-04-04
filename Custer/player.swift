@@ -139,6 +139,7 @@ internal class Player: NSObject {
     }
     
     private func streamInterrupted(notification: Notification) {
+        guard self.state == .playing else { return }
         os_log(.error, log: log, "%s", player_error.interrupted.rawValue)
         self.error = player_error.interrupted.rawValue
         self.state = .error
