@@ -60,6 +60,8 @@ class MenuBar {
 }
 
 class Menu: NSMenu {
+    private let streamsMenu: NSMenu = NSMenu()
+    
     init() {
         super.init(title: "")
         
@@ -87,9 +89,10 @@ class Menu: NSMenu {
         
         self.addItem(NSMenuItem.separator())
         
-        let streamAddress = NSMenuItem(title: "Set stream address", action: #selector(self.showAddressView), keyEquivalent: "")
-        streamAddress.target = self
+        let streamAddress = NSMenuItem(title: "Set stream address", action: nil, keyEquivalent: "")
+        streamAddress.submenu = self.streamsMenu
         self.addItem(streamAddress)
+        self.rebuildStreamsMenu()
         
         let clearCache = NSMenuItem(title: "Clear cache", action: #selector(self.clearCache), keyEquivalent: "r")
         clearCache.target = self
@@ -125,24 +128,151 @@ class Menu: NSMenu {
     }
     
     @objc public func showAddressView() {
+        self.showStreamEditor(index: nil)
+    }
+    
+    public func rebuildStreamsMenu() {
+        self.streamsMenu.removeAllItems()
+        
+        let current = uri
+        let list = streams
+        
+        if list.isEmpty {
+            let empty = NSMenuItem(title: "No streams", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            self.streamsMenu.addItem(empty)
+        } else {
+            for (i, s) in list.enumerated() {
+                let title = s.name.isEmpty ? s.url : s.name
+                let item = NSMenuItem(title: title, action: #selector(self.selectStream(_:)), keyEquivalent: "")
+                item.target = self
+                item.tag = i
+                item.state = (s.url == current && !current.isEmpty) ? .on : .off
+                item.toolTip = s.url
+                self.streamsMenu.addItem(item)
+            }
+        }
+        
+        self.streamsMenu.addItem(NSMenuItem.separator())
+        
+        let add = NSMenuItem(title: "Add...", action: #selector(self.addStream), keyEquivalent: "")
+        add.target = self
+        self.streamsMenu.addItem(add)
+        
+        if !list.isEmpty {
+            let editSubmenu = NSMenu()
+            for (i, s) in list.enumerated() {
+                let title = s.name.isEmpty ? s.url : s.name
+                let it = NSMenuItem(title: title, action: #selector(self.editStream(_:)), keyEquivalent: "")
+                it.target = self
+                it.tag = i
+                editSubmenu.addItem(it)
+            }
+            let edit = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
+            edit.submenu = editSubmenu
+            self.streamsMenu.addItem(edit)
+            
+            let removeSubmenu = NSMenu()
+            for (i, s) in list.enumerated() {
+                let title = s.name.isEmpty ? s.url : s.name
+                let it = NSMenuItem(title: title, action: #selector(self.removeStream(_:)), keyEquivalent: "")
+                it.target = self
+                it.tag = i
+                removeSubmenu.addItem(it)
+            }
+            let remove = NSMenuItem(title: "Remove", action: nil, keyEquivalent: "")
+            remove.submenu = removeSubmenu
+            self.streamsMenu.addItem(remove)
+        }
+    }
+    
+    @objc private func selectStream(_ sender: NSMenuItem) {
+        let list = streams
+        guard sender.tag >= 0 && sender.tag < list.count else { return }
+        uri = list[sender.tag].url
+        self.rebuildStreamsMenu()
+    }
+    
+    @objc private func addStream() {
+        self.showStreamEditor(index: nil)
+    }
+    
+    @objc private func editStream(_ sender: NSMenuItem) {
+        self.showStreamEditor(index: sender.tag)
+    }
+    
+    @objc private func removeStream(_ sender: NSMenuItem) {
+        var list = streams
+        guard sender.tag >= 0 && sender.tag < list.count else { return }
+        let target = list[sender.tag]
+        
+        NSApplication.shared.activate()
+        let alert = NSAlert()
+        alert.messageText = "Remove stream"
+        alert.informativeText = "Are you sure you want to remove \"\(target.name.isEmpty ? target.url : target.name)\"?"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Yes")
+        alert.addButton(withTitle: "No")
+        
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        
+        let removed = list.remove(at: sender.tag)
+        streams = list
+        if removed.url == uri {
+            uri = list.first?.url ?? ""
+        }
+        self.rebuildStreamsMenu()
+    }
+    
+    private func showStreamEditor(index: Int?) {
         NSApplication.shared.activate()
         let alert: NSAlert = NSAlert()
         
         alert.addButton(withTitle: "OK")
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .informational
-        alert.messageText = "Stream URL"
+        alert.messageText = index == nil ? "Add stream" : "Edit stream"
         
-        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 294, height: 24))
-        input.stringValue = uri
-        input.cell!.wraps = false
-        input.cell!.isScrollable = true
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 294, height: 54))
         
-        alert.accessoryView = input
+        let nameField = NSTextField(frame: NSRect(x: 0, y: 30, width: 294, height: 24))
+        nameField.placeholderString = "Name"
+        
+        let urlField = NSTextField(frame: NSRect(x: 0, y: 0, width: 294, height: 24))
+        urlField.placeholderString = "URL"
+        urlField.cell!.wraps = false
+        urlField.cell!.isScrollable = true
+        
+        var list = streams
+        if let i = index, i >= 0 && i < list.count {
+            nameField.stringValue = list[i].name
+            urlField.stringValue = list[i].url
+        }
+        
+        container.addSubview(nameField)
+        container.addSubview(urlField)
+        alert.accessoryView = container
         
         switch alert.runModal() {
         case .OK, .alertFirstButtonReturn:
-            uri = input.stringValue
+            let url = urlField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if url.isEmpty { return }
+            let newStream = Stream(name: nameField.stringValue, url: url)
+            if let i = index, i >= 0 && i < list.count {
+                let old = list[i]
+                list[i] = newStream
+                streams = list
+                if old.url == uri {
+                    uri = newStream.url
+                }
+            } else {
+                list.append(newStream)
+                streams = list
+                if uri.isEmpty {
+                    uri = newStream.url
+                }
+            }
+            self.rebuildStreamsMenu()
         case .cancel, .alertSecondButtonReturn: break
         default: break
         }

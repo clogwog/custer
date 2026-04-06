@@ -24,6 +24,26 @@ var uri: String {
     }
 }
 
+struct Stream: Codable {
+    var name: String
+    var url: String
+}
+
+var streams: [Stream] {
+    get {
+        guard let data = UserDefaults.standard.data(forKey: "streams"),
+              let arr = try? JSONDecoder().decode([Stream].self, from: data) else {
+            return []
+        }
+        return arr
+    }
+    set {
+        if let data = try? JSONEncoder().encode(newValue) {
+            UserDefaults.standard.set(data, forKey: "streams")
+        }
+    }
+}
+
 @main
 class AppDelegate: NSObject, NSApplicationDelegate {
     private let menuBar: MenuBar = MenuBar()
@@ -39,10 +59,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         self.updater.cleanup()
         
+        // migrate legacy single url into streams list
+        if streams.isEmpty && uri != "" {
+            streams = [Stream(name: "Stream", url: uri)]
+        }
+        
         if uri == "" {
             os_log(.debug, log: log, "Stream url is not defined")
             self.menuBar.menu.showAddressView()
         }
+        
+        self.menuBar.menu.rebuildStreamsMenu()
         
         Player.shared.delegate = self
         Player.shared.setURL(uri)
