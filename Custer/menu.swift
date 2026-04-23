@@ -30,6 +30,27 @@ class MenuBar {
         self.item.button?.image = NSImage(named: NSImage.Name(image))
     }
     
+    private func animateClick() {
+        guard let button = self.item.button else {
+            return
+        }
+        
+        button.wantsLayer = true
+        
+        let animation = CAKeyframeAnimation(keyPath: "transform.scale")
+        animation.values = [1.0, 0.72, 1.12, 1.0]
+        animation.keyTimes = [0.0, 0.15, 0.45, 1.0]
+        animation.timingFunctions = [
+            CAMediaTimingFunction(name: .easeOut),
+            CAMediaTimingFunction(name: .easeOut),
+            CAMediaTimingFunction(name: .easeIn)
+        ]
+        animation.duration = 0.35
+        animation.isRemovedOnCompletion = true
+        
+        button.layer?.add(animation, forKey: "clickBounce")
+    }
+    
     @objc private func click(_ sender: NSStatusBarButton) {
         guard let event: NSEvent = NSApp.currentEvent else {
             return
@@ -41,6 +62,8 @@ class MenuBar {
             self.item.menu = nil
             return
         }
+        
+        self.animateClick()
         
         if uri == "" {
             self.menu.showAddressView()
