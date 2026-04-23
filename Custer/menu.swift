@@ -26,15 +26,12 @@ class MenuBar {
         self.item.button?.image = NSImage(named: NSImage.Name("error"))
     }
     
-    public func setImage(_ image: String)
-    {
+    public func setImage(_ image: String) {
         self.item.button?.image = NSImage(named: NSImage.Name(image))
     }
     
-    private func animateClick()
-    {
-        guard let button = self.item.button else
-        {
+    private func animateClick() {
+        guard let button = self.item.button else {
             return
         }
         
@@ -54,15 +51,12 @@ class MenuBar {
         button.layer?.add(animation, forKey: "clickBounce")
     }
     
-    @objc private func click(_ sender: NSStatusBarButton)
-    {
-        guard let event: NSEvent = NSApp.currentEvent else
-        {
+    @objc private func click(_ sender: NSStatusBarButton) {
+        guard let event: NSEvent = NSApp.currentEvent else {
             return
         }
         
-        if (event.type == NSEvent.EventType.rightMouseDown)
-        {
+        if (event.type == NSEvent.EventType.rightMouseDown) {
             self.item.menu = self.menu
             self.item.button?.performClick(nil)
             self.item.menu = nil
@@ -71,18 +65,15 @@ class MenuBar {
         
         self.animateClick()
         
-        if uri == ""
-        {
+        if uri == "" {
             self.menu.showAddressView()
         }
         
-        if Player.shared.isError()
-        {
+        if Player.shared.isError() {
             return
         }
         
-        if Player.shared.isPlaying()
-        {
+        if Player.shared.isPlaying() {
             Player.shared.pause()
             return
         }
