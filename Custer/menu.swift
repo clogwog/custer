@@ -26,31 +26,63 @@ class MenuBar {
         self.item.button?.image = NSImage(named: NSImage.Name("error"))
     }
     
-    public func setImage(_ image: String) {
+    public func setImage(_ image: String)
+    {
         self.item.button?.image = NSImage(named: NSImage.Name(image))
     }
     
-    @objc private func click(_ sender: NSStatusBarButton) {
-        guard let event: NSEvent = NSApp.currentEvent else {
+    private func animateClick()
+    {
+        guard let button = self.item.button else
+        {
             return
         }
         
-        if (event.type == NSEvent.EventType.rightMouseDown) {
+        button.wantsLayer = true
+        
+        let animation = CAKeyframeAnimation(keyPath: "transform.scale")
+        animation.values = [1.0, 0.72, 1.12, 1.0]
+        animation.keyTimes = [0.0, 0.15, 0.45, 1.0]
+        animation.timingFunctions = [
+            CAMediaTimingFunction(name: .easeOut),
+            CAMediaTimingFunction(name: .easeOut),
+            CAMediaTimingFunction(name: .easeIn)
+        ]
+        animation.duration = 0.35
+        animation.isRemovedOnCompletion = true
+        
+        button.layer?.add(animation, forKey: "clickBounce")
+    }
+    
+    @objc private func click(_ sender: NSStatusBarButton)
+    {
+        guard let event: NSEvent = NSApp.currentEvent else
+        {
+            return
+        }
+        
+        if (event.type == NSEvent.EventType.rightMouseDown)
+        {
             self.item.menu = self.menu
             self.item.button?.performClick(nil)
             self.item.menu = nil
             return
         }
         
-        if uri == "" {
+        self.animateClick()
+        
+        if uri == ""
+        {
             self.menu.showAddressView()
         }
         
-        if Player.shared.isError() {
+        if Player.shared.isError()
+        {
             return
         }
         
-        if Player.shared.isPlaying() {
+        if Player.shared.isPlaying()
+        {
             Player.shared.pause()
             return
         }
